@@ -1,22 +1,5 @@
 """
 yahooファイナンス日本版から株価データを取得するライブラリ。
-
-create: 170422
-update: 170422
-
-yahoo_multi_download()がメインの機能。
-これで株価データをダウンロードしてcsv保存できる。
-複数銘柄の連続ダウンロードができる。
-
-YahooJpStockHistoricalは単一銘柄のダウンロード。
-csv保存せず、dataframeにとどめたいときに便利。
-adj closeの補正前データが必要な場合にも使える。
-
-adjust_yahoo_ohlcは、yahoo finance米国版のデータでも同様に使用できる補正用関数。
-
-YahooLocalPathは、google_fincaneでダウンロードしたときの命名規則に一致させるための
-ファイル名生成ツール。
-
 """
 
 import datetime
@@ -25,7 +8,6 @@ import warnings
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from .google_finance import LocalDataPath
 
 
 def adjust_yahoo_ohlc(df, inplace=False):
@@ -45,67 +27,6 @@ def adjust_yahoo_ohlc(df, inplace=False):
     df["Close"] = df["Adj Close"]
     df.drop("Adj Close", axis=1, inplace=True)
     return df
-
-
-def yahoo_multi_download(symbol_list, start=None, end=None, period_days=10, folder_path=None, pause=0.01):
-    """複数銘柄の株価データをダウンロード
-
-    複数銘柄をダウンロードし、csvで保存する。
-    個々の銘柄のダウンロードにYahooJpStockHistorical.write_csv()を使用。
-
-    保存ファイル名: google_finance.LocalDataPathの命名規則に従う。
-        例えば、symbol_code=9022, interval=300, period="3d"で2017-03-01に作成したファイルパスは、
-        code_9022_i_300_p_3d_2017-03-01_16.csvのようになる。
-
-    Parameters:
-    - symbol_list: list of int, 銘柄コード(整数)をリストにしたもの
-    - folder_path: ダウンロードしたデータをcsvで保存するフォルダパス。Noneならintradayフォルダに保存。
-    - end: datetime.date or str,
-        データ取得最終日。Noneにすると本日にセット。
-        '2014-12-01'のような文字列形式にしてもいいし、datetime.dateにしてもいい。
-    - start: datetime.date or str,
-        データ取得開始日。 Noneにすると、endからperiod_days遡った日
-    - period_days: int, 取得期間日数。startがNoneのときのみ有効。 startにendからperiod_days遡った日をセット
-    - pause: float or int, 各銘柄のリクエストごとの待ち時間(単位は秒)。
-
-    Returns:
-    - request_result: dict of lists,
-        リクエスト成功と失敗の銘柄コードのリストを、辞書型でまとめて返す。
-        keys {"request": 全銘柄, "passed": 成功したリスト, "failed": 失敗したリスト},
-
-    Usage:
-        # 銘柄コード[9020, 7203, 9022]についてダウンロードしcsvで保存する場合
-        # 保存先のフォルダを指定
-        folder_yahoo = "path_to_folder"
-        result = yahoo_multi_download(symbol_list=[9020, 7203, 9022], folder_path=folder_yahoo, period_days=250)
-    """
-    if not isinstance(symbol_list, list):
-        raise ValueError("The argument has to be list-type.")
-
-    list_failed = []
-    list_passed = []
-
-    with requests.Session() as s:
-        for i in symbol_list:
-            with YahooJpStockHistorical(symbol_code=i, start=start, end=end,
-                                        period_days=period_days, request_session=s) as ystock:
-                filename = ystock.autogenerate_filename(data_folder_path=folder_path)
-                try:
-                    ystock.write_csv(filename=filename)
-                    list_passed.append(ystock._symbol_code)
-                except requests.exceptions.Timeout:
-                    msg = "Timeout error: faild to read symbol {0}".format(ystock._symbol_code)
-                    warnings.warn(msg)
-                    list_failed.append(ystock._symbol_code)
-                except IOError:
-                    msg = "IOError: Faild to read symbol {0}".format(ystock._symbol_code)
-                    warnings.warn(msg)
-                    list_failed.append(ystock._symbol_code)
-            time.sleep(pause)
-
-    request_result = {"request": symbol_list, "passed": list_passed, "failed": list_failed}
-
-    return request_result
 
 
 class YahooJpStockHistorical():
@@ -128,7 +49,7 @@ class YahooJpStockHistorical():
     """
 
     def __init__(self, symbol_code=7203, start=None, end=None, period_days=10,
-                 request_session=None):
+                 request_session=None, pause_single_table=2):
         """
         - symbol_code: int, 銘柄コード
         - end: datetime.date or str,
@@ -152,7 +73,7 @@ class YahooJpStockHistorical():
         if self._date_end <= self._date_start:
             raise ValueError("end date should be later than start date.")
 
-        self._pause_single_table = 0.01  # page_numを1つ増加するときの待ち時間(秒)
+        self._pause_single_table = pause_single_table  # page_numを1つ増加するときの待ち時間(秒)
         self._df_cached = None  # 一時的にdfをキャッシュする
         self._request_session = request_session
         # request sessionからrequestする場合のrequest条件
@@ -221,7 +142,7 @@ class YahooJpStockHistorical():
         if not df.notnull().all().all():
             warnings.warn("nullデータが含まれる")
 
-        df.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close']
+        df.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Adj_Close']
         df.Date = pd.to_datetime(df.Date, format='%Y年%m月%d日')
         return df.sort_values("Date")
 
@@ -304,39 +225,3 @@ class YahooJpStockHistorical():
         if adjust_ohlc is True:
             df = adjust_yahoo_ohlc(df)
         df.to_csv(path_or_buf=filename, encoding=encoding, index=index)
-
-    def autogenerate_filename(self, data_folder_path=None, save_to_cwd=False):
-        """データをcsv保存するときのファイルパスを機械的に生成。
-        例えば、code_7203_i_86400_p_30d_2017-04-23_2.csv
-        このメソッドは。パスを生成するだけ。
-
-        - data_folder_path: str,
-            ファイルを保存するフォルダのパス。
-            Noneにすると、google_finance.LocalDataPathのデフォルトパス_data_folderになる。
-        - save_to_cwd: bool, Trueにするとカレントディレクトリに保存。
-
-        Returns: str, ファイルパス
-        """
-        ypath = YahooLocalPath(symbol_code=self._symbol_code,
-                               date_end=self._date_end,
-                               date_start=self._date_start,
-                               data_folder_path=data_folder_path)
-        filepath = ypath.create_filepath(save_to_data_folder=(not save_to_cwd))
-        return filepath
-
-    def close(self):
-        self._request_session = None
-        self._df_cached = None
-
-
-class YahooLocalPath(LocalDataPath):
-    """YahooJpStockHistoricalインスタンスから保存先のファイルパスを自動生成する。
-    google_finance.LocalDataPathと同様の命名規則になるように、差異のある部分を調整している。"""
-    # yahooファイナンスでは日足のみなのでintervalは固定
-    _interval = 60 * 60 * 24
-
-    def __init__(self, symbol_code, date_end, date_start, data_folder_path=None):
-        """data_folder_pathを指定すると、google_finance.LocalDataPathとは異なるフォルダに保存できる"""
-        self._data_folder = data_folder_path or self._data_folder
-        period = str((date_end - date_start).days) + "d"
-        super().__init__(symbol_code=symbol_code, interval=self._interval, period=period)
