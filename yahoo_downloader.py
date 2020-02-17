@@ -21,11 +21,11 @@ def adjust_yahoo_ohlc(df, inplace=False):
     """
     if inplace is False:
         df = df.copy()
-    df["Open"] = df["Open"] * df["Adj Close"] / df["Close"]
-    df["High"] = df["High"] * df["Adj Close"] / df["Close"]
-    df["Low"] = df["Low"] * df["Adj Close"] / df["Close"]
-    df["Close"] = df["Adj Close"]
-    df.drop("Adj Close", axis=1, inplace=True)
+    df["Open"] = df["Open"] * df["Adj_Close"] / df["Close"]
+    df["High"] = df["High"] * df["Adj_Close"] / df["Close"]
+    df["Low"] = df["Low"] * df["Adj_Close"] / df["Close"]
+    df["Close"] = df["Adj_Close"]
+    df.drop("Adj_Close", axis=1, inplace=True)
     return df
 
 
